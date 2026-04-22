@@ -1,104 +1,87 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-"""
-Saarthi Environment Implementation.
-
-A simple test environment that echoes back messages sent to it.
-Perfect for testing HTTP server infrastructure.
-"""
-
 from uuid import uuid4
-
+from typing import Dict, List
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
 
 try:
-    from ..models import SaarthiAction, SaarthiObservation
+    from .models import (
+        SaarthiAction, SaarthiObservation, AccountState, 
+        ProxyValues, Message, ProxyData
+    )
 except ImportError:
-    from models import SaarthiAction, SaarthiObservation
-
+    from models import (
+        SaarthiAction, SaarthiObservation, AccountState, 
+        ProxyValues, Message, ProxyData
+    )
 
 class SaarthiEnvironment(Environment):
-    """
-    A simple echo environment that echoes back messages.
-
-    This environment is designed for testing the HTTP server infrastructure.
-    It maintains minimal state and simply echoes back whatever message it receives.
-
-    Example:
-        >>> env = SaarthiEnvironment()
-        >>> obs = env.reset()
-        >>> print(obs.echoed_message)  # "Saarthi environment ready!"
-        >>>
-        >>> obs = env.step(SaarthiAction(message="Hello"))
-        >>> print(obs.echoed_message)  # "Hello"
-        >>> print(obs.message_length)  # 5
-    """
-
-    # Enable concurrent WebSocket sessions.
-    # Set to True if your environment isolates state between instances.
-    # When True, multiple WebSocket clients can connect simultaneously, each
-    # getting their own environment instance (when using factory mode in app.py).
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
     def __init__(self):
-        """Initialize the Saarthi environment."""
         self._state = State(episode_id=str(uuid4()), step_count=0)
-        self._reset_count = 0
+        self.current_month = 1
+        self._hidden_world: Dict[int, ProxyValues] = {} 
+        self.portfolio: List[AccountState] = []
 
     def reset(self) -> SaarthiObservation:
-        """
-        Reset the environment.
-
-        Returns:
-            SaarthiObservation with a ready message
-        """
         self._state = State(episode_id=str(uuid4()), step_count=0)
-        self._reset_count += 1
+        self.current_month = 1
+        self._hidden_world = {}
+        self.portfolio = []
+        
+        # Initialize 30 accounts with hidden ground truths
+        for i in range(30):
+            is_startup = i >= 20
+            acc_type = "startup" if is_startup else "msme"
+            
+            # Link hidden proxies to account ID
+            self._hidden_world[i] = ProxyValues(
+                gst_regularity="regular" if not is_startup else "n/a",
+                github_activity=1.0 if is_startup else 0.0
+            )
+            
+            self.portfolio.append(AccountState(
+                account_id=i,
+                account_type=acc_type,
+                industry_or_sector="fintech" if is_startup else "textile",
+                outstanding_principal=500000.0,
+                revealed_info={} # Hidden by default
+            ))
 
-        return SaarthiObservation(
-            echoed_message="Saarthi environment ready!",
-            message_length=0,
-            done=False,
-            reward=0.0,
-        )
+        return self._get_observation()
 
-    def step(self, action: SaarthiAction) -> SaarthiObservation:  # type: ignore[override]
-        """
-        Execute a step in the environment by echoing the message.
-
-        Args:
-            action: SaarthiAction containing the message to echo
-
-        Returns:
-            SaarthiObservation with the echoed message and its length
-        """
+    def step(self, action: SaarthiAction) -> SaarthiObservation:
         self._state.step_count += 1
+        acc_id = action.account_id
+        
+        # Logic to 'Link' hidden proxies to revealed_info on demand
+        if action.action_type == "check_github_activity":
+            truth = self._hidden_world[acc_id].github_activity
+            self.portfolio[acc_id].revealed_info["github_activity"] = truth
+            
+        elif action.action_type == "verify_gst_portal":
+            truth = self._hidden_world[acc_id].gst_regularity
+            self.portfolio[acc_id].revealed_info["gst_status"] = truth
 
-        message = action.message
-        length = len(message)
+        # Track conversation history per account
+        if action.generated_text:
+            self.portfolio[acc_id].convo_history.append(
+                Message(month=self.current_month, role="rm", content=action.generated_text)
+            )
 
-        # Simple reward: longer messages get higher rewards
-        reward = length * 0.1
+        # Reward logic: placeholder for NPA/Recovery performance
+        reward = 0.1 
+        
+        return self._get_observation(reward=reward)
 
+    def _get_observation(self, reward: float = 0.0) -> SaarthiObservation:
         return SaarthiObservation(
-            echoed_message=message,
-            message_length=length,
-            done=False,
-            reward=reward,
-            metadata={"original_message": message, "step": self._state.step_count},
+            current_month=self.current_month,
+            portfolio_npa_rate=0.0,
+            accounts=self.portfolio,
+            active_notifications=[a.account_id for a in self.portfolio if a.dpd > 0]
         )
 
     @property
     def state(self) -> State:
-        """
-        Get the current environment state.
-
-        Returns:
-            Current State with episode_id and step_count
-        """
         return self._state
