@@ -12,6 +12,26 @@ class Message(BaseModel):
     content: str  # The actual Hinglish/English text
     action_taken: Optional[str] = None  # If role is 'rm', which action was this?
 
+class AccountState(BaseModel):
+    account_id: int
+    account_type: Literal["msme", "startup"]
+    industry_or_sector: str  # e.g., 'auto_ancillary' or 'fintech'
+    
+    # Financial State
+    outstanding_principal: float
+    dpd: int = Field(default=0, ge=0)
+    payment_history: List[int] = []  # List of DPDs over time to detect patterns
+    
+    # it shows the signals of the borrower
+    # Dict to allow flexible signals like {'gst_status': 1.0, 'github_commits': 0.6}
+    proxies: Dict[str, float] = {} 
+    
+    # Relationship Tracking
+    trust_score: float = Field(default=1.0, ge=0.0, le=1.0)
+    convo_history: List[Message] = []  # Track of conversation per account
+    
+    is_npa: bool = False  # Terminal state for this account
+
 class SaarthiAction(Action):
     """Action for the Saarthi environment - just a message to echo."""
 
