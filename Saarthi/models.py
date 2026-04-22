@@ -1,18 +1,16 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 """
 Data models for the Saarthi Environment.
 
 The Saarthi environment is a simple test environment that echoes back messages.
 """
+from pydantic import BaseModel, Field
+from typing import List, Dict, Optional, Literal
 
-from openenv.core.env_server.types import Action, Observation
-from pydantic import Field
-
+class Message(BaseModel):
+    month: int = Field(..., ge=1, le=36)
+    role: Literal["rm", "borrower"]
+    content: str  # The actual Hinglish/English text
+    action_taken: Optional[str] = None  # If role is 'rm', which action was this?
 
 class SaarthiAction(Action):
     """Action for the Saarthi environment - just a message to echo."""
