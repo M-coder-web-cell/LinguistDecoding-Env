@@ -1,45 +1,51 @@
-"""
-Data models for the Saarthi Environment.
-
-The Saarthi environment is a simple test environment that echoes back messages.
-"""
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Literal
+from typing import List, Dict, Optional, Literal, Union
+
+# --- Hidden Proxy Data (The Ground Truth) ---
+
+class ProxyValues(BaseModel):
+    """
+    The 'Ground Truth' data stored in the Environment's hidden state.
+    Linked to the account but NOT visible in the observation by default.
+    """
+    # MSME Truths
+    gst_regularity: str = "regular" 
+    guarantor_trust: float = 0.8
+    
+    # Startup Truths
+    github_activity: float = 1.0  # 1.0 = Normal, 0.5 = 50% drop
+    hiring_status: str = "hiring"
+    investor_sentiment: float = 0.9
+
+# --- Observable Models ---
 
 class Message(BaseModel):
-    month: int = Field(..., ge=1, le=36)
+    month: int
     role: Literal["rm", "borrower"]
-    content: str  # The actual Hinglish/English text
-    action_taken: Optional[str] = None  # If role is 'rm', which action was this?
+    content: str
+    action_type: Optional[str] = None
 
 class AccountState(BaseModel):
+    """
+    The LLM's view of a business. Proxies only appear here when asked.
+    """
     account_id: int
     account_type: Literal["msme", "startup"]
-    industry_or_sector: str  # e.g., 'auto_ancillary' or 'fintech'
+    industry_or_sector: str
+    dpd: int = 0
+    is_npa: bool = False
     
-    # Financial State
-    outstanding_principal: float
-    dpd: int = Field(default=0, ge=0)
-    payment_history: List[int] = []  # List of DPDs over time to detect patterns
+    # Track of conversation per account
+    convo_history: List[Message] = []
     
-    # it shows the signals of the borrower
-    # Dict to allow flexible signals like {'gst_status': 1.0, 'github_commits': 0.6}
-    proxies: Dict[str, float] = {} 
-    
-    # Relationship Tracking
-    trust_score: float = Field(default=1.0, ge=0.0, le=1.0)
-    convo_history: List[Message] = []  # Track of conversation per account
-    
-    is_npa: bool = False  # Terminal state for this account
+    # REVEALED PROXIES: Linked here ONLY after an investigation action
+    # If the LLM hasn't asked, this dictionary remains empty.
+    revealed_info: Dict[str, Union[str, float]] = Field(default_factory=dict)
 
-class SaarthiAction(Action):
-    """Action for the Saarthi environment - just a message to echo."""
+# --- The Global Observation (What the Agent Sees) ---
 
-    message: str = Field(..., description="Message to echo back")
-
-
-class SaarthiObservation(Observation):
-    """Observation from the Saarthi environment - the echoed message."""
-
-    echoed_message: str = Field(default="", description="The echoed message")
-    message_length: int = Field(default=0, description="Length of the echoed message")
+class SaarthiObservation(BaseModel):
+    current_month: int
+    portfolio_npa_rate: float
+    accounts: List[AccountState]
+    active_notifications: List[int]  # List of accounts needing RM attention
